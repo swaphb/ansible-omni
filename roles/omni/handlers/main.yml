@@ -1,0 +1,7 @@
+---
+- name: Restart Omni stack
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ omni_base_dir }}"
+  changed_when: true
+

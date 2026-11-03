@@ -1,0 +1,7 @@
+---
+- name: Deploy self-hosted Sidero Omni
+  hosts: omni
+  become: true
+  roles:
+    - omni
+

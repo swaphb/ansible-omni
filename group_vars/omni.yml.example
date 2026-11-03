@@ -1,0 +1,34 @@
+---
+omni_endpoint: omni.internal
+omni_auth_endpoint: auth.internal
+omni_advertised_ip: 192.0.2.10
+omni_private_ip: 192.0.2.10
+omni_admin_email: admin@omni.internal
+
+# Store these with ansible-vault; do not commit real values.
+omni_admin_password: CHANGE_ME
+omni_oidc_client_secret: CHANGE_ME_TO_A_LONG_RANDOM_VALUE
+
+# Authentication provider: "dex" (bundled default) or "pocketid".
+omni_oidc_provider: dex
+
+# Pocket ID example. Use a stable client ID/secret. To create the client through
+# Pocket ID's API, enable bootstrap and supply a vaulted admin API key.
+omni_pocketid_url: https://id.example.com
+omni_pocketid_bootstrap: false
+omni_pocketid_api_key: ""
+omni_pocketid_client_name: Sidero Omni
+# If Pocket ID uses a private CA, vault/paste its PEM chain here.
+omni_extra_ca_certificates: ""
+
+# Optional: make Omni reachable through an existing Pangolin server via Newt.
+# Create a Newt site in Pangolin first and copy its three values here.
+omni_newt_enabled: false
+omni_newt_pangolin_endpoint: https://pangolin.example.com
+omni_newt_id: ""
+omni_newt_secret: ""
+
+# Setting both values accepts Sidero's EULA non-interactively. Leave both empty
+# to accept it in the UI instead.
+omni_eula_name: ""
+omni_eula_email: ""

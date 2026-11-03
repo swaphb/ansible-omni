@@ -1,0 +1,118 @@
+services:
+{% if omni_oidc_provider == 'dex' %}
+  dex:
+    image: ghcr.io/dexidp/dex:{{ omni_dex_version }}
+    container_name: dex
+    restart: unless-stopped
+{% if not omni_newt_enabled %}
+    ports:
+      - "5556:5556"
+{% else %}
+    networks:
+      omni-newt:
+        aliases:
+          - {{ omni_auth_endpoint }}
+{% endif %}
+    volumes:
+      - ./config/dex.yaml:/etc/dex/dex.yaml:ro,Z
+      - ./pki/server-key.pem:/etc/dex/tls/server-key.pem:ro,Z
+      - ./pki/server-chain.pem:/etc/dex/tls/server-chain.pem:ro,Z
+    command: ["dex", "serve", "/etc/dex/dex.yaml"]
+{% endif %}
+
+  omni:
+    image: ghcr.io/siderolabs/omni:{{ omni_version }}
+    container_name: omni
+    restart: unless-stopped
+{% if omni_newt_enabled %}
+    networks:
+      omni-newt:
+        aliases:
+          - {{ omni_endpoint }}
+{% else %}
+    network_mode: host
+{% endif %}
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/net/tun:/dev/net/tun"]
+{% if omni_oidc_provider == 'dex' %}
+    depends_on: [dex]
+{% endif %}
+    volumes:
+      - ./pki/combined-ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro,Z
+      - ./pki/server-key.pem:/server-key.pem:ro,Z
+      - ./pki/server-chain.pem:/server-chain.pem:ro,Z
+      - ./secrets/omni.asc:/omni.asc:ro,Z
+      - ./data/sqlite:/_out/sqlite:rw,Z
+{% if omni_embedded_etcd %}
+      - ./data/etcd:/_out/etcd:rw,Z
+{% else %}
+      - ./etcd/ca.pem:/etcd/ca.crt:ro,Z
+      - ./etcd/client.pem:/etcd/client.crt:ro,Z
+      - ./etcd/client-key.pem:/etcd/client.key:ro,Z
+{% endif %}
+    command:
+      - --name=omni
+      - --cert=/server-chain.pem
+      - --key=/server-key.pem
+      - --machine-api-cert=/server-chain.pem
+      - --machine-api-key=/server-key.pem
+      - --machine-api-bind-addr=0.0.0.0:8090
+      - --private-key-source=file:///omni.asc
+      - --event-sink-port=8091
+      - --bind-addr=0.0.0.0:443
+      - --k8s-proxy-bind-addr=0.0.0.0:8100
+      - --advertised-api-url=https://{{ omni_endpoint }}/
+      - --siderolink-api-advertised-url=https://{{ omni_endpoint }}:8090/
+      - --siderolink-wireguard-advertised-addr={{ omni_advertised_ip }}:50180
+      - --advertised-kubernetes-proxy-url=https://{{ omni_endpoint }}:8100/
+{% if not omni_embedded_etcd %}
+      - --etcd-embedded=false
+      - --etcd-endpoints={{ omni_etcd_endpoints | join(',') }}
+{% endif %}
+      - --auth-auth0-enabled=false
+      - --auth-oidc-enabled=true
+{% if omni_oidc_provider == 'pocketid' %}
+      - --auth-oidc-provider-url={{ omni_pocketid_url | regex_replace('/$', '') }}
+{% else %}
+      - --auth-oidc-provider-url=https://{{ omni_auth_endpoint }}:5556
+{% endif %}
+      - --auth-oidc-client-id={{ omni_oidc_client_id }}
+      - --auth-oidc-client-secret={{ omni_oidc_client_secret | replace('$', '$$') }}
+      - --auth-oidc-scopes=openid
+      - --auth-oidc-scopes=profile
+      - --auth-oidc-scopes=email
+      - --sqlite-storage-path=/_out/sqlite/omni.db
+      - --initial-users={{ omni_admin_email }}
+{% if omni_eula_name | length > 0 and omni_eula_email | length > 0 %}
+      - --eula-accept-name={{ omni_eula_name }}
+      - --eula-accept-email={{ omni_eula_email }}
+{% endif %}
+
+{% if omni_newt_enabled %}
+  newt:
+    image: docker.io/fosrl/newt:{{ omni_newt_version }}
+    container_name: omni-newt
+    restart: unless-stopped
+    environment:
+      CONFIG_FILE: /run/secrets/newt-config
+      HEALTH_FILE: /tmp/healthy
+    secrets:
+      - newt-config
+    networks:
+      - omni-newt
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f /tmp/healthy ]"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+secrets:
+  newt-config:
+    file: ./secrets/newt-config.json
+
+networks:
+  omni-newt:
+    name: {{ omni_newt_network_name }}
+    driver: bridge
+{% endif %}

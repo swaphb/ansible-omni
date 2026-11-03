@@ -1,0 +1,19 @@
+issuer: https://{{ omni_auth_endpoint }}:5556
+storage:
+  type: memory
+web:
+  https: 0.0.0.0:5556
+  tlsCert: /etc/dex/tls/server-chain.pem
+  tlsKey: /etc/dex/tls/server-key.pem
+enablePasswordDB: true
+staticClients:
+  - name: Omni
+    id: {{ omni_oidc_client_id | to_json }}
+    secret: {{ omni_oidc_client_secret | to_json }}
+    redirectURIs:
+      - https://{{ omni_endpoint }}/oidc/consume
+staticPasswords:
+  - email: {{ omni_admin_email | to_json }}
+    username: admin
+    preferredUsername: admin
+    hash: {{ omni_admin_password_hash | trim | to_json }}

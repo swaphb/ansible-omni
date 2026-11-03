@@ -1,0 +1,341 @@
+---
+- name: Validate configuration
+  ansible.builtin.assert:
+    that:
+      - omni_oidc_provider in ['dex', 'pocketid']
+      - omni_oidc_provider != 'dex' or omni_admin_password | length >= 12
+      - omni_oidc_client_secret | length >= 24
+      - omni_oidc_provider != 'pocketid' or omni_pocketid_url | length > 0
+      - not omni_pocketid_bootstrap or omni_oidc_provider == 'pocketid'
+      - not omni_pocketid_bootstrap or omni_pocketid_api_key | length > 0
+      - omni_advertised_ip | length > 0
+      - omni_private_ip | length > 0
+      - omni_embedded_etcd or omni_etcd_endpoints | length > 0
+      - (omni_eula_name | length == 0) == (omni_eula_email | length == 0)
+      - not omni_newt_enabled or omni_newt_pangolin_endpoint | length > 0
+      - not omni_newt_enabled or omni_newt_id | length > 0
+      - not omni_newt_enabled or omni_newt_secret | length > 0
+    fail_msg: Review the required variables in group_vars/omni.yml.example.
+
+- name: Require a supported OS when installing Docker
+  ansible.builtin.assert:
+    that: ansible_os_family == 'Debian'
+    fail_msg: Automatic Docker installation supports Debian/Ubuntu; set omni_install_docker=false and install Docker Engine with Compose manually.
+  when: omni_install_docker
+
+- name: Install host packages
+  ansible.builtin.package:
+    name: "{{ omni_required_packages[ansible_os_family] }}"
+    state: present
+  vars:
+    omni_required_packages:
+      Debian: [ca-certificates, curl, gnupg, openssl, apache2-utils]
+      RedHat: [ca-certificates, curl, gnupg2, openssl, httpd-tools]
+  when: ansible_os_family in ['Debian', 'RedHat']
+
+- name: Require supported package names
+  ansible.builtin.assert:
+    that: ansible_os_family in ['Debian', 'RedHat']
+    fail_msg: This role supports Debian/Ubuntu and RHEL-family hosts. Add package mappings for this distribution before running it.
+
+- name: Install Docker from distribution packages
+  ansible.builtin.apt:
+    name: [docker.io, docker-compose-v2]
+    state: present
+    update_cache: true
+  when: omni_install_docker
+
+- name: Start Docker
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Check TUN device
+  ansible.builtin.stat:
+    path: /dev/net/tun
+  register: omni_tun
+
+- name: Require TUN support
+  ansible.builtin.assert:
+    that: omni_tun.stat.exists
+    fail_msg: /dev/net/tun is required for SideroLink/WireGuard. Enable the TUN kernel device on the host.
+
+- name: Create Omni directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ omni_base_dir }}", mode: "0750" }
+    - { path: "{{ omni_base_dir }}/config", mode: "0750" }
+    - { path: "{{ omni_base_dir }}/pki", mode: "0750" }
+    - { path: "{{ omni_base_dir }}/secrets", mode: "0700" }
+    - { path: "{{ omni_base_dir }}/data/sqlite", mode: "0750" }
+    - { path: "{{ omni_base_dir }}/data/etcd", mode: "0750" }
+    - { path: "{{ omni_base_dir }}/gnupg", mode: "0700" }
+    - { path: "{{ omni_base_dir }}/etcd", mode: "0700" }
+
+- name: Add local service hostnames
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.0\.1\s+.*# ansible-omni$'
+    line: "127.0.0.1 {{ omni_endpoint }} {{ omni_auth_endpoint }} # ansible-omni"
+  when: omni_add_host_entries
+
+- name: Generate private CA key
+  ansible.builtin.command: >-
+    openssl genrsa -out {{ omni_base_dir }}/pki/ca-key.pem 4096
+  args:
+    creates: "{{ omni_base_dir }}/pki/ca-key.pem"
+  no_log: true
+
+- name: Generate private CA certificate
+  ansible.builtin.command: >-
+    openssl req -x509 -new -sha256
+    -key {{ omni_base_dir }}/pki/ca-key.pem
+    -out {{ omni_base_dir }}/pki/ca.pem
+    -days {{ omni_cert_valid_days }}
+    -subj /C={{ omni_cert_country }}/O={{ omni_cert_organization }}/CN={{ omni_ca_common_name }}
+  args:
+    creates: "{{ omni_base_dir }}/pki/ca.pem"
+
+- name: Write server certificate configuration
+  ansible.builtin.template:
+    src: openssl.cnf.j2
+    dest: "{{ omni_base_dir }}/pki/openssl.cnf"
+    mode: "0640"
+  register: omni_cert_config
+
+- name: Check server certificate
+  ansible.builtin.stat:
+    path: "{{ omni_base_dir }}/pki/server.pem"
+  register: omni_server_certificate
+
+- name: Generate server key and request
+  ansible.builtin.command: >-
+    openssl req -new -newkey rsa:4096 -nodes
+    -keyout {{ omni_base_dir }}/pki/server-key.pem
+    -out {{ omni_base_dir }}/pki/server.csr
+    -config {{ omni_base_dir }}/pki/openssl.cnf
+  when: omni_cert_config.changed or not omni_server_certificate.stat.exists
+  notify: Restart Omni stack
+
+- name: Sign server certificate
+  ansible.builtin.command: >-
+    openssl x509 -req -sha256
+    -in {{ omni_base_dir }}/pki/server.csr
+    -CA {{ omni_base_dir }}/pki/ca.pem
+    -CAkey {{ omni_base_dir }}/pki/ca-key.pem
+    -CAcreateserial
+    -out {{ omni_base_dir }}/pki/server.pem
+    -days {{ omni_cert_valid_days }}
+    -extensions req_ext
+    -extfile {{ omni_base_dir }}/pki/openssl.cnf
+  when: omni_cert_config.changed or not omni_server_certificate.stat.exists
+  register: omni_certificate_signed
+  notify: Restart Omni stack
+
+- name: Check server certificate chain
+  ansible.builtin.stat:
+    path: "{{ omni_base_dir }}/pki/server-chain.pem"
+  register: omni_server_chain
+
+- name: Build server certificate chain
+  ansible.builtin.shell: >-
+    cat {{ omni_base_dir }}/pki/server.pem {{ omni_base_dir }}/pki/ca.pem >
+    {{ omni_base_dir }}/pki/server-chain.pem
+  when: omni_certificate_signed.changed or not omni_server_chain.stat.exists
+
+- name: Generate Omni encryption key
+  ansible.builtin.shell: |
+    set -o pipefail
+    gpg --batch --passphrase '' --quick-generate-key \
+      'Omni (Used for etcd data encryption) <omni@internal.local>' rsa4096 cert never
+    fingerprint=$(gpg --batch --with-colons --list-keys omni@internal.local | awk -F: '$1 == "fpr" {print $10; exit}')
+    gpg --batch --passphrase '' --quick-add-key "$fingerprint" rsa4096 encr never
+    gpg --batch --export-secret-key --armor omni@internal.local > {{ omni_base_dir }}/secrets/omni.asc
+  args:
+    executable: /bin/bash
+    creates: "{{ omni_base_dir }}/secrets/omni.asc"
+  environment:
+    GNUPGHOME: "{{ omni_base_dir }}/gnupg"
+  no_log: true
+
+- name: Generate and persist Dex password hash
+  ansible.builtin.shell: >-
+    umask 077 && htpasswd -nbBC 15 admin {{ omni_admin_password | quote }} |
+    cut -d: -f2- > {{ omni_base_dir }}/secrets/admin-password.hash
+  args:
+    creates: "{{ omni_base_dir }}/secrets/admin-password.hash"
+  no_log: true
+  when: omni_oidc_provider == 'dex'
+
+- name: Read Dex password hash
+  ansible.builtin.slurp:
+    src: "{{ omni_base_dir }}/secrets/admin-password.hash"
+  register: omni_password_hash_file
+  no_log: true
+  when: omni_oidc_provider == 'dex'
+
+- name: Set password hash
+  ansible.builtin.set_fact:
+    omni_admin_password_hash: "{{ omni_password_hash_file.content | b64decode | trim }}"
+  no_log: true
+  when: omni_oidc_provider == 'dex'
+
+- name: Check for existing Pocket ID Omni client
+  ansible.builtin.uri:
+    url: "{{ omni_pocketid_url | regex_replace('/$', '') }}/api/oidc/clients/{{ omni_oidc_client_id | urlencode }}"
+    method: GET
+    headers:
+      X-API-KEY: "{{ omni_pocketid_api_key }}"
+    status_code: [200, 404]
+    return_content: true
+  register: omni_pocketid_client_lookup
+  no_log: true
+  when: omni_pocketid_bootstrap
+
+- name: Create Pocket ID OIDC client for Omni
+  ansible.builtin.uri:
+    url: "{{ omni_pocketid_url | regex_replace('/$', '') }}/api/oidc/clients"
+    method: POST
+    headers:
+      X-API-KEY: "{{ omni_pocketid_api_key }}"
+    body_format: json
+    body:
+      id: "{{ omni_oidc_client_id }}"
+      name: "{{ omni_pocketid_client_name }}"
+      description: Managed by the Sidero Omni Ansible role
+      callbackURLs:
+        - "https://{{ omni_endpoint }}/oidc/consume"
+      isPublic: false
+      isGroupRestricted: false
+      launchURL: "https://{{ omni_endpoint }}/"
+      skipConsent: "{{ omni_pocketid_skip_consent | bool }}"
+    status_code: 201
+    return_content: true
+  register: omni_pocketid_client_created
+  no_log: true
+  when:
+    - omni_pocketid_bootstrap
+    - omni_pocketid_client_lookup.status == 404
+
+- name: Install configured secret on newly created Pocket ID client
+  ansible.builtin.uri:
+    url: "{{ omni_pocketid_url | regex_replace('/$', '') }}/api/oidc/clients/{{ omni_oidc_client_id | urlencode }}/secrets"
+    method: POST
+    headers:
+      X-API-KEY: "{{ omni_pocketid_api_key }}"
+    body_format: json
+    body:
+      secret: "{{ omni_oidc_client_secret }}"
+    status_code: 201
+  no_log: true
+  when:
+    - omni_pocketid_bootstrap
+    - omni_pocketid_client_lookup.status == 404
+
+- name: Remove Pocket ID's automatically generated bootstrap secret
+  ansible.builtin.uri:
+    url: "{{ omni_pocketid_url | regex_replace('/$', '') }}/api/oidc/clients/{{ omni_oidc_client_id | urlencode }}/secrets/{{ omni_pocketid_client_created.json.createdSecret.id | urlencode }}"
+    method: DELETE
+    headers:
+      X-API-KEY: "{{ omni_pocketid_api_key }}"
+    status_code: 204
+  no_log: true
+  when:
+    - omni_pocketid_bootstrap
+    - omni_pocketid_client_lookup.status == 404
+
+- name: Render Newt configuration secret
+  ansible.builtin.template:
+    src: newt-config.json.j2
+    dest: "{{ omni_base_dir }}/secrets/newt-config.json"
+    mode: "0600"
+  no_log: true
+  when: omni_newt_enabled
+  notify: Restart Omni stack
+
+- name: Copy external etcd credentials
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "{{ omni_base_dir }}/etcd/{{ item.name }}"
+    mode: "0600"
+  loop:
+    - { name: ca.pem, content: "{{ omni_external_etcd_ca }}" }
+    - { name: client.pem, content: "{{ omni_external_etcd_client_cert }}" }
+    - { name: client-key.pem, content: "{{ omni_external_etcd_client_key }}" }
+  no_log: true
+  when: not omni_embedded_etcd
+  notify: Restart Omni stack
+
+- name: Extract public CA bundle from pinned Omni image
+  ansible.builtin.command:
+    argv: [docker, run, --rm, --entrypoint, cat, "ghcr.io/siderolabs/omni:{{ omni_version }}", /etc/ssl/certs/ca-certificates.crt]
+  register: omni_public_ca
+  changed_when: false
+
+- name: Read internal CA
+  ansible.builtin.slurp:
+    src: "{{ omni_base_dir }}/pki/ca.pem"
+  register: omni_internal_ca
+
+- name: Install merged CA bundle
+  ansible.builtin.copy:
+    content: "{{ omni_public_ca.stdout }}\n{{ omni_internal_ca.content | b64decode }}\n{{ omni_extra_ca_certificates }}"
+    dest: "{{ omni_base_dir }}/pki/combined-ca-certificates.crt"
+    mode: "0644"
+  notify: Restart Omni stack
+
+- name: Render Dex configuration
+  ansible.builtin.template:
+    src: dex.yaml.j2
+    dest: "{{ omni_base_dir }}/config/dex.yaml"
+    mode: "0600"
+  no_log: true
+  when: omni_oidc_provider == 'dex'
+  notify: Restart Omni stack
+
+- name: Render Docker Compose project
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ omni_base_dir }}/compose.yml"
+    mode: "0600"
+  no_log: true
+  notify: Restart Omni stack
+
+- name: Start Omni stack
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ omni_base_dir }}"
+  register: omni_compose_up
+  changed_when: "'Started' in omni_compose_up.stdout or 'Created' in omni_compose_up.stdout"
+
+- name: Get Omni container address for private health check
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' }}"
+      - omni
+  register: omni_container_address
+  changed_when: false
+  when: omni_newt_enabled
+
+- name: Select Omni health-check URL
+  ansible.builtin.set_fact:
+    omni_health_url: "{{ 'https://' + (omni_container_address.stdout | trim) + '/' if omni_newt_enabled else 'https://127.0.0.1/' }}"
+
+- name: Wait for Omni HTTPS endpoint
+  ansible.builtin.uri:
+    url: "{{ omni_health_url }}"
+    validate_certs: false
+    status_code: 200
+  register: omni_health
+  retries: 30
+  delay: 5
+  until: omni_health.status == 200

@@ -1,0 +1,43 @@
+---
+omni_install_docker: true
+omni_version: v1.12.4
+omni_dex_version: v2.41.1
+omni_base_dir: /opt/omni
+omni_endpoint: omni.internal
+omni_auth_endpoint: auth.internal
+omni_advertised_ip: "{{ ansible_default_ipv4.address }}"
+omni_private_ip: "{{ ansible_default_ipv4.address }}"
+omni_admin_email: admin@omni.internal
+omni_admin_password: ""
+omni_oidc_client_id: omni
+omni_oidc_client_secret: ""
+omni_oidc_provider: dex
+omni_pocketid_url: ""
+omni_pocketid_bootstrap: false
+omni_pocketid_api_key: ""
+omni_pocketid_client_name: Sidero Omni
+omni_pocketid_skip_consent: false
+omni_extra_ca_certificates: ""
+omni_eula_name: ""
+omni_eula_email: ""
+omni_ca_common_name: Omni Internal Root CA
+omni_cert_country: US
+omni_cert_organization: Internal Infrastructure
+omni_cert_valid_days: 3650
+omni_add_host_entries: true
+
+# Optional Pangolin Newt sidecar. In this mode Omni, Dex, and Newt share an
+# un-published bridge network instead of exposing ports on the Omni host.
+omni_newt_enabled: false
+omni_newt_version: "1.19.0"
+omni_newt_pangolin_endpoint: ""
+omni_newt_id: ""
+omni_newt_secret: ""
+omni_newt_network_name: omni-newt
+# Embedded is the supported single-instance default. For external etcd, set
+# this false, provide endpoints and place the three client files as documented.
+omni_embedded_etcd: true
+omni_etcd_endpoints: []
+omni_external_etcd_ca: ""
+omni_external_etcd_client_cert: ""
+omni_external_etcd_client_key: ""
