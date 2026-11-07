@@ -20,6 +20,15 @@ documentation synchronized.
 - `site.yml`: top-level playbook.
 - `inventory/hosts.yml`: example inventory.
 - `group_vars/omni.yml.example`: user-facing configuration example.
+- `group_vars/omni.1password.yml.example`: safe 1Password reference template.
+- `group_vars/omni.yml`: locally rendered deployment values; intentionally
+  ignored and never committed.
+- `scripts/bootstrap-1password.sh`: creates one 1Password Secure Note with a
+  field for every public role variable.
+- `scripts/render-1password-group-vars.sh`: renders the Secure Note into the
+  ignored deployment file immediately before an Ansible run.
+- `scripts/create-proxmox-omni-lxc.sh`: optional Proxmox VE host helper that
+  creates an unprivileged LXC with Docker nesting and TUN access.
 - `roles/omni/defaults/main.yml`: complete role defaults and public variables.
 - `roles/omni/tasks/main.yml`: validation, PKI, identity bootstrap, deployment,
   and health checks.
@@ -77,7 +86,9 @@ logs.
 ## Secrets and persisted state
 
 Never commit real credentials. `group_vars/omni.yml` is intentionally ignored;
-users should encrypt it with Ansible Vault.
+users should encrypt it with Ansible Vault or render it locally from the
+1Password item immediately before deployment. `group_vars/omni.1password.yml`
+may be committed only when it contains `op://` references and no values.
 
 Treat these as sensitive:
 
@@ -89,6 +100,13 @@ Treat these as sensitive:
 - `/opt/omni/secrets/omni.asc`;
 - all private keys under `/opt/omni/pki`; and
 - rendered Compose and identity-provider configuration.
+
+The 1Password bootstrap item is a `SECURE_NOTE`, not a `PASSWORD` item, because
+Password items require an unrelated built-in password field. Its field labels
+are part of the `op://` references: rotate values in place and do not rename
+fields. Do not put secrets in `op` command-line arguments, committed manifests,
+or validation output. Do not use direct `op inject` against multiline PEM
+values; use the render helper, which preserves YAML types and multiline data.
 
 Tasks that accept, render, register, or copy secret material must use
 `no_log: true`. Keep sensitive files at mode `0600` and secret directories at
@@ -129,6 +147,10 @@ backup/recovery steps.
   Compose.
 - When changing endpoint names or TLS behavior, verify certificate SANs,
   advertised URLs, OIDC issuer URLs, and callback URLs together.
+- The Proxmox LXC helper must remain an opt-in, host-side convenience script.
+  It must keep the LXC unprivileged, enable only the Docker nesting/keyctl
+  features and `/dev/net/tun` device access required by Omni, and refuse an
+  existing CT ID rather than changing an existing container.
 
 ## Required validation
 
@@ -142,6 +164,8 @@ For every change:
 5. Confirm Newt variants contain no `ports` entry for Omni or Dex.
 6. Confirm Pocket ID variants contain no Dex service.
 7. Check that no secret value appears in command output or committed files.
+8. For changed shell helpers, run the appropriate shell syntax check and its
+   non-mutating `--help` path.
 
 A lightweight Compose-render validation can use Python, Jinja2, and PyYAML.
 When manually constructing the Jinja environment, provide equivalents for

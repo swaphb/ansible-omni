@@ -51,6 +51,27 @@ Target host:
   reach. Do not advertise `127.0.0.1`, a Docker address, or a NAT address those
   machines cannot reach.
 
+### Proxmox LXC (advanced)
+
+Omni can run in an unprivileged Proxmox LXC when Docker nesting, `keyctl`, and
+`/dev/net/tun` access are enabled. This is more operationally complex than a
+small VM and is not the recommended production topology. The helper below must
+run as root on a Proxmox VE host; it creates the LXC but does not install
+Docker, because the role does that on Debian/Ubuntu by default.
+
+```bash
+scripts/create-proxmox-omni-lxc.sh \
+  --ctid 120 \
+  --template local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst \
+  --ip 192.168.1.120/24 --gateway 192.168.1.1 \
+  --ssh-keys /root/.ssh/authorized_keys
+```
+
+The LXC needs its own reachable network address. In direct mode, open the
+required Omni ports to the LXC; in Newt mode it needs outbound reachability to
+the Pangolin endpoint. The helper requires a current Proxmox release supporting
+`pct set <CTID> --dev0 /dev/net/tun`.
+
 Required inbound ports when Omni is published on the host. With Newt enabled,
 publish these ports on the Pangolin server. The role does not publish them
 on the Omni host.
@@ -110,6 +131,50 @@ The first run downloads large images and generates 4096-bit keys, so it can
 take several minutes. Open `https://<omni_endpoint>` and log in with the
 administrator email and password. If you left the EULA variables blank, the
 UI asks the first user to accept the EULA.
+
+## Store group variables in 1Password
+
+The repository includes a bootstrap script that creates one Secure Note with
+a field for every public `omni_*` role variable. Secret fields, including the
+administrator password, OAuth secret, Newt secret, Pocket ID API key, and the
+external etcd client key, are concealed fields. The bootstrap generates a
+fresh administrator password and Omni OIDC client secret directly into the
+item. Provider-issued values (Pocket ID API key, Pangolin/Newt secret, and
+external etcd key) start empty for you to paste from those systems.
+
+```bash
+scripts/bootstrap-1password.sh --vault "Infrastructure" --item "ansible-omni"
+cp group_vars/omni.1password.yml.example group_vars/omni.1password.yml
+```
+
+Dex is the default OIDC mode. For Pocket ID, initialize the item with the
+matching mode; the generated `omni_oidc_client_secret` is suitable for the
+Omni client that the optional Pocket ID bootstrap creates. Enter the existing
+Pocket ID URL and API key before running the playbook.
+
+```bash
+scripts/bootstrap-1password.sh --vault "Infrastructure" --oidc-provider pocketid
+```
+
+Replace `<vault>` and `<item>` in `group_vars/omni.1password.yml`. The template
+uses standard `op://vault/item/field` secret references, so the 1Password VS
+Code extension can insert and manage each reference. This reference file is
+safe to commit. Keep field names unchanged when rotating a value: the variable
+name is the reference's field name.
+
+Ansible does not resolve `op://` references itself. Immediately before a run,
+render the one item locally. This writes the separate, mode-`0600`, Git-ignored
+`group_vars/omni.yml` and preserves booleans, lists, and multiline PEM content:
+
+```bash
+scripts/render-1password-group-vars.sh --vault "Infrastructure" --item "ansible-omni"
+ansible-playbook site.yml
+```
+
+For external etcd, enter `omni_etcd_endpoints` in 1Password as JSON, for
+example `["https://etcd-1.internal:2379"]`. Do not run `op inject` directly
+against the template for PEM fields: direct text substitution cannot safely
+indent multiline certificates and keys. Use the render script instead.
 
 ## Trusting the generated CA
 
