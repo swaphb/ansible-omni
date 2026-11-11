@@ -4,9 +4,9 @@
 
 set -Eeuo pipefail
 
-ctid=""
-template=""
-storage="local-lvm"
+ctid="8000"
+template="ISOs:vztmpl/ubuntu-26.04-standard_26.04-1_amd64.tar.zst"
+storage="pve1_nvme"
 bridge="vmbr0"
 hostname="omni"
 ip="dhcp"
@@ -15,7 +15,7 @@ cores="2"
 memory="4096"
 swap="512"
 disk_gib="32"
-ssh_keys=""
+ssh_keys="./ssh-pub-key.pub"
 
 usage() {
   cat <<'USAGE'
