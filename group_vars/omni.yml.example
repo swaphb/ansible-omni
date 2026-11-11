@@ -27,6 +27,20 @@ omni_newt_enabled: false
 omni_newt_pangolin_endpoint: https://pangolin.example.com
 omni_newt_id: ""
 omni_newt_secret: ""
+# Required for Omni's HTTP/2 UI/API through Newt private HTTPS resources.
+# This builds a pinned Newt derivative on the target during deployment.
+omni_newt_http2_enabled: false
+# Keep this source pin aligned with the supported 1.19.0 patch.
+omni_newt_source_commit: "329d6a1c6509aa0769fa5bf3b8437518fc4e83df"
+
+# Optional: Pangolin machine client for subnet routing. This requires Newt
+# mode, a Pangolin Machine Client, and routing from the Talos subnet to this
+# host. See README before enabling it.
+omni_pangolin_subnet_router_enabled: false
+omni_pangolin_cli_version: "0.18.1"
+omni_pangolin_machine_endpoint: https://pangolin.example.com
+omni_pangolin_machine_id: ""
+omni_pangolin_machine_secret: ""
 
 # Setting both values accepts Sidero's EULA non-interactively. Leave both empty
 # to accept it in the UI instead.

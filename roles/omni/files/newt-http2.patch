@@ -1,0 +1,71 @@
+diff --git a/netstack2/http_handler.go b/netstack2/http_handler.go
+index ed307b1..a609c7c 100644
+--- a/netstack2/http_handler.go
++++ b/netstack2/http_handler.go
+@@ -20,6 +20,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/fosrl/newt/logger"
++	"golang.org/x/net/http2"
+ 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+ )
+ 
+@@ -246,9 +247,27 @@ func (h *HTTPHandler) HandleConn(conn net.Conn, rule *SubnetRule) {
+ 				conn.Close()
+ 				return
+ 			}
+-			// tls.Server wraps the raw conn; the TLS handshake is deferred until
+-			// the first Read, which the http.Server will trigger naturally.
+-			effectiveConn = tls.Server(conn, tlsCfg)
++			tlsConn := tls.Server(conn, tlsCfg)
++			if err := tlsConn.Handshake(); err != nil {
++				logger.Warn("HTTP handler: TLS handshake failed for connection from %s: %v", conn.RemoteAddr(), err)
++				conn.Close()
++				return
++			}
++
++			if tlsConn.ConnectionState().NegotiatedProtocol == "h2" {
++				ctx := context.WithValue(context.Background(), connCtxKey{}, rule)
++				ctx = context.WithValue(ctx, connTLSKey{}, true)
++
++				go (&http2.Server{}).ServeConn(tlsConn, &http2.ServeConnOpts{
++					Context:    ctx,
++					BaseConfig: h.server,
++					Handler:    http.HandlerFunc(h.handleRequest),
++				})
++
++				return
++			}
++
++			effectiveConn = tlsConn
+ 		}
+ 	}
+ 
+@@ -299,6 +318,7 @@ func (h *HTTPHandler) getTLSConfig(rule *SubnetRule) (*tls.Config, error) {
+ 	}
+ 	cfg := &tls.Config{
+ 		Certificates: []tls.Certificate{cert},
++		NextProtos:  []string{"h2", "http/1.1"},
+ 	}
+ 	// LoadOrStore is safe under concurrent calls: if two goroutines race here
+ 	// both will produce a valid config; the loser's work is discarded.
+@@ -318,7 +338,10 @@ func (h *HTTPHandler) getFallbackTLSConfig() *tls.Config {
+ 			logger.Error("HTTP handler: failed to generate fallback self-signed cert: %v", err)
+ 			return
+ 		}
+-		h.fallbackTLSCfg = &tls.Config{Certificates: []tls.Certificate{cert}}
++		h.fallbackTLSCfg = &tls.Config{
++			Certificates: []tls.Certificate{cert},
++			NextProtos:  []string{"h2", "http/1.1"},
++		}
+ 	})
+ 	return h.fallbackTLSCfg
+ }
+@@ -379,6 +402,7 @@ func (h *HTTPHandler) getProxy(target HTTPTarget) *httputil.ReverseProxy {
+ 			TLSClientConfig: &tls.Config{
+ 				InsecureSkipVerify: true, //nolint:gosec // downstream self-signed certs are a supported configuration
+ 			},
++			ForceAttemptHTTP2: true,
+ 		}
+ 	}
+ 

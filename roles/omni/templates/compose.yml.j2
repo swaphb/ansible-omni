@@ -38,7 +38,7 @@ services:
     depends_on: [dex]
 {% endif %}
     volumes:
-      - ./pki/combined-ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro,Z
+      - ./pki/additional-ca-certificates.crt:/etc/ssl/certs/omni-additional-ca-certificates.crt:ro,Z
       - ./pki/server-key.pem:/server-key.pem:ro,Z
       - ./pki/server-chain.pem:/server-chain.pem:ro,Z
       - ./secrets/omni.asc:/omni.asc:ro,Z
@@ -90,7 +90,14 @@ services:
 
 {% if omni_newt_enabled %}
   newt:
+{% if omni_newt_http2_enabled %}
+    build:
+      context: ./newt-http2
+      dockerfile: Dockerfile
+    image: ansible-omni/newt-http2:{{ omni_newt_version }}
+{% else %}
     image: docker.io/fosrl/newt:{{ omni_newt_version }}
+{% endif %}
     container_name: omni-newt
     restart: unless-stopped
     environment:
@@ -106,6 +113,21 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 3
+
+{% if omni_pangolin_subnet_router_enabled %}
+  pangolin-subnet-router:
+    image: docker.io/fosrl/pangolin-cli:{{ omni_pangolin_cli_version }}
+    container_name: omni-pangolin-subnet-router
+    restart: unless-stopped
+    network_mode: host
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/net/tun:/dev/net/tun"]
+    environment:
+      PANGOLIN_ENDPOINT: {{ omni_pangolin_machine_endpoint | to_json }}
+      CLIENT_ID: {{ omni_pangolin_machine_id | to_json }}
+      CLIENT_SECRET: {{ omni_pangolin_machine_secret | to_json }}
+    command: ["--subnet-router"]
+{% endif %}
 
 secrets:
   newt-config:

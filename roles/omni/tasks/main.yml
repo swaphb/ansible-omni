@@ -15,6 +15,13 @@
       - not omni_newt_enabled or omni_newt_pangolin_endpoint | length > 0
       - not omni_newt_enabled or omni_newt_id | length > 0
       - not omni_newt_enabled or omni_newt_secret | length > 0
+      - not omni_newt_http2_enabled or omni_newt_enabled
+      - not omni_newt_http2_enabled or omni_newt_version == '1.19.0'
+      - not omni_newt_http2_enabled or omni_newt_source_commit | length == 40
+      - not omni_pangolin_subnet_router_enabled or omni_newt_enabled
+      - not omni_pangolin_subnet_router_enabled or omni_pangolin_machine_endpoint | length > 0
+      - not omni_pangolin_subnet_router_enabled or omni_pangolin_machine_id | length > 0
+      - not omni_pangolin_subnet_router_enabled or omni_pangolin_machine_secret | length > 0
     fail_msg: Review the required variables in group_vars/omni.yml.example.
 
 - name: Require a supported OS when installing Docker
@@ -93,12 +100,21 @@
   no_log: true
 
 - name: Generate private CA certificate
-  ansible.builtin.command: >-
-    openssl req -x509 -new -sha256
-    -key {{ omni_base_dir }}/pki/ca-key.pem
-    -out {{ omni_base_dir }}/pki/ca.pem
-    -days {{ omni_cert_valid_days }}
-    -subj /C={{ omni_cert_country }}/O={{ omni_cert_organization }}/CN={{ omni_ca_common_name }}
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -new
+      - -sha256
+      - -key
+      - "{{ omni_base_dir }}/pki/ca-key.pem"
+      - -out
+      - "{{ omni_base_dir }}/pki/ca.pem"
+      - -days
+      - "{{ omni_cert_valid_days | string }}"
+      - -subj
+      - "/C={{ omni_cert_country }}/O={{ omni_cert_organization }}/CN={{ omni_ca_common_name }}"
   args:
     creates: "{{ omni_base_dir }}/pki/ca.pem"
 
@@ -259,6 +275,35 @@
   when: omni_newt_enabled
   notify: Restart Omni stack
 
+- name: Create Newt HTTP/2 build directory
+  ansible.builtin.file:
+    path: "{{ omni_base_dir }}/newt-http2"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  when: omni_newt_http2_enabled
+
+- name: Render pinned Newt HTTP/2 Dockerfile
+  ansible.builtin.template:
+    src: newt-http2.Dockerfile.j2
+    dest: "{{ omni_base_dir }}/newt-http2/Dockerfile"
+    owner: root
+    group: root
+    mode: "0640"
+  when: omni_newt_http2_enabled
+  notify: Restart Omni stack
+
+- name: Install pinned Newt HTTP/2 patch
+  ansible.builtin.copy:
+    src: newt-http2.patch
+    dest: "{{ omni_base_dir }}/newt-http2/newt-http2.patch"
+    owner: root
+    group: root
+    mode: "0640"
+  when: omni_newt_http2_enabled
+  notify: Restart Omni stack
+
 - name: Copy external etcd credentials
   ansible.builtin.copy:
     content: "{{ item.content }}"
@@ -272,21 +317,15 @@
   when: not omni_embedded_etcd
   notify: Restart Omni stack
 
-- name: Extract public CA bundle from pinned Omni image
-  ansible.builtin.command:
-    argv: [docker, run, --rm, --entrypoint, cat, "ghcr.io/siderolabs/omni:{{ omni_version }}", /etc/ssl/certs/ca-certificates.crt]
-  register: omni_public_ca
-  changed_when: false
-
 - name: Read internal CA
   ansible.builtin.slurp:
     src: "{{ omni_base_dir }}/pki/ca.pem"
   register: omni_internal_ca
 
-- name: Install merged CA bundle
+- name: Install additional CA certificates for Omni
   ansible.builtin.copy:
-    content: "{{ omni_public_ca.stdout }}\n{{ omni_internal_ca.content | b64decode }}\n{{ omni_extra_ca_certificates }}"
-    dest: "{{ omni_base_dir }}/pki/combined-ca-certificates.crt"
+    content: "{{ omni_internal_ca.content | b64decode }}\n{{ omni_extra_ca_certificates }}"
+    dest: "{{ omni_base_dir }}/pki/additional-ca-certificates.crt"
     mode: "0644"
   notify: Restart Omni stack
 
@@ -309,7 +348,9 @@
 
 - name: Start Omni stack
   ansible.builtin.command:
-    cmd: docker compose up -d --remove-orphans
+    cmd: >-
+      docker compose up -d --remove-orphans
+      {{ '--build' if omni_newt_http2_enabled else '' }}
     chdir: "{{ omni_base_dir }}"
   register: omni_compose_up
   changed_when: "'Started' in omni_compose_up.stdout or 'Created' in omni_compose_up.stdout"

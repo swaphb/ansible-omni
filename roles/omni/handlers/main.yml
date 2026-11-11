@@ -1,7 +1,8 @@
 ---
 - name: Restart Omni stack
   ansible.builtin.command:
-    cmd: docker compose up -d --remove-orphans
+    cmd: >-
+      docker compose up -d --remove-orphans
+      {{ '--build' if omni_newt_http2_enabled else '' }}
     chdir: "{{ omni_base_dir }}"
   changed_when: true
-

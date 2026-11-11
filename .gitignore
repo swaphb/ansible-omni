@@ -1,3 +1,4 @@
 group_vars/omni.yml
 group_vars/omni.yml.rendered
+examples/pangolin-subnet-router/router.env
 *.retry

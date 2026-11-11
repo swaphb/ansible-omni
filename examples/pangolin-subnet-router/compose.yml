@@ -1,0 +1,14 @@
+services:
+  pangolin-subnet-router:
+    image: docker.io/fosrl/pangolin-cli:0.18.1
+    container_name: pangolin-subnet-router
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    env_file:
+      - ${PANGOLIN_ROUTER_ENV_FILE:-router.env}
+    command:
+      - --subnet-router

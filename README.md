@@ -122,7 +122,7 @@ names in their hosts files.
 4. Check connectivity, preview the changes, then deploy:
 
    ```bash
-   ansible omni -m ping
+   ansible omni -m ping --ask-vault-pass
    ansible-playbook site.yml --ask-vault-pass --check --diff
    ansible-playbook site.yml --ask-vault-pass
    ```
@@ -217,6 +217,10 @@ endpoint DNS SANs and the relevant IP SANs.
 | `omni_base_dir` | `/opt/omni` | Root for configuration and persistent data |
 | `omni_newt_enabled` | `false` | Isolate services behind a Pangolin Newt connector |
 | `omni_newt_version` | `1.19.0` | Pinned Newt container tag |
+| `omni_newt_http2_enabled` | `false` | Build a pinned Newt derivative that proxies HTTPS resources with HTTP/2 support |
+| `omni_newt_source_commit` | `329d6a1…4e83df` | Exact Newt 1.19.0 source revision used by the HTTP/2 derivative |
+| `omni_pangolin_subnet_router_enabled` | `false` | Run a Pangolin machine client as a subnet router on the Omni host |
+| `omni_pangolin_machine_*` | empty | Pangolin machine-client endpoint, ID, and secret for the subnet router |
 | `omni_oidc_provider` | `dex` | Bundled Dex, or an external Pocket ID server |
 
 The role hashes the admin password with bcrypt, stores that hash in
@@ -306,6 +310,16 @@ lock yourself out.
 
 ## Optional Newt-only exposure
 
+### Network diagrams
+
+The supported network paths are documented as standalone Mermaid diagrams:
+
+| Scenario | Diagram |
+|---|---|
+| Direct host exposure (Dex or Pocket ID) | [Direct exposure](docs/networking/direct-exposure.md) |
+| Newt site with public HTTPS and raw machine resources | [Newt site and public resources](docs/networking/newt-site-and-public-resources.md) |
+| Newt site with private resources consumed through the Pangolin CLI subnet router | [Newt site and private resources](docs/networking/newt-private-resources.md) |
+
 Set `omni_newt_enabled` to true to run a Newt connector alongside Omni. The
 role then makes these changes:
 
@@ -329,11 +343,67 @@ omni_newt_version: "1.19.0"
 omni_newt_pangolin_endpoint: https://pangolin.example.com
 omni_newt_id: site-id-from-pangolin
 omni_newt_secret: "{{ vault_omni_newt_secret }}"
+# Required for the Omni UI/API resource; see the HTTP/2 note below.
+omni_newt_http2_enabled: true
+omni_newt_source_commit: "329d6a1c6509aa0769fa5bf3b8437518fc4e83df"
 ```
 
 The role writes a root-only Compose secret and starts `omni-newt`. Pangolin's
 [Newt installation documentation](https://docs.pangolin.net/manage/sites/install-newt)
 requires the endpoint, the site ID, and the site secret.
+
+### Omni UI HTTP/2 support
+
+Omni uses long-lived HTTP/2 API streams. Newt 1.19.0's private HTTPS handler
+does not advertise HTTP/2 or enable it on its HTTPS upstream transport, which
+can make the sign-in page load while the application itself times out or fails
+to load assets. Set `omni_newt_http2_enabled: true` for the Omni site.
+
+The role then builds a local, pinned derivative from the exact Newt 1.19.0
+source commit with only three changes: it advertises `h2` and `http/1.1` over
+TLS, enables Go's HTTP/2 server handler, and enables HTTP/2 on the HTTPS
+upstream transport. The build runs on the Omni host and needs outbound access
+to GitHub and Docker Hub/ECR for its source and builder images. It does not
+change the Pangolin resource: keep the UI target at `https` and `omni:443`.
+Review and update the pin and patch together when changing `omni_newt_version`.
+The role intentionally rejects a custom HTTP/2 build for any version other
+than the tested `1.19.0` until its source pin and patch are updated together.
+
+### Optional Pangolin subnet router
+
+Talos cannot run the Pangolin access client. If you want Talos machines to
+reach Pangolin private resources, the role can run the official Pangolin CLI as
+a machine client and subnet router. This is separate from Newt: Newt exposes
+the Omni site to Pangolin, while the machine client consumes private resources
+on behalf of devices routed through the Omni host.
+
+Create a Machine Client in Pangolin, grant it access to the required private
+host or CIDR resource, then vault its values:
+
+```yaml
+omni_pangolin_subnet_router_enabled: true
+omni_pangolin_cli_version: "0.18.1"
+omni_pangolin_machine_endpoint: https://pangolin.example.com
+omni_pangolin_machine_id: machine-client-id-from-pangolin
+omni_pangolin_machine_secret: "{{ vault_omni_pangolin_machine_secret }}"
+```
+
+The sidecar uses Pangolin CLI 0.18.1 or newer because subnet-router support
+was introduced in CLI 0.18.0. It uses host networking, `NET_ADMIN`, and
+`/dev/net/tun`; enabling it
+changes routing and firewall behavior on the Omni host. It is only useful when
+the Talos subnet routes Pangolin private-resource traffic through that host. If
+the Omni host is not the Talos subnet's default gateway, add a static route on
+that gateway for the private-resource CIDR, with the Omni host as next hop.
+Pangolin warns that Docker forwarding rules can interfere with subnet routers;
+configure Docker's `ip-forward-no-drop` setting on the host before enabling
+this mode. The role intentionally does not modify `/etc/docker/daemon.json` or
+the Talos network gateway.
+
+For a Talos LAN at a different physical location, deploy the separate
+[remote subnet-router Compose bundle](examples/pangolin-subnet-router/README.md)
+on a Linux router at that location. The Omni-host sidecar cannot route traffic
+from a remote LAN that does not use the Omni host as its next hop.
 
 ### Pangolin resources and targets
 

@@ -1,0 +1,3 @@
+# This file is a patch payload applied during the Newt image build.  Keep Git
+# from interpreting its embedded diff hunks as this repository's own diff.
+roles/omni/files/newt-http2.patch -diff

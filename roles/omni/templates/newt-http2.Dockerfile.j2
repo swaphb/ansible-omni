@@ -1,0 +1,35 @@
+ARG NEWT_SOURCE_COMMIT={{ omni_newt_source_commit }}
+
+FROM public.ecr.aws/docker/library/golang:1.26-alpine AS builder
+ARG NEWT_SOURCE_COMMIT
+
+RUN apk --no-cache add ca-certificates git tzdata
+WORKDIR /src
+
+# Fetch the immutable revision used by the Newt 1.19.0 image rather than a
+# branch or a floating tag. git apply fails the build if upstream changes make
+# the narrowly scoped HTTP/2 patch incompatible.
+RUN git init newt \
+    && cd newt \
+    && git remote add origin https://github.com/fosrl/newt.git \
+    && git fetch --depth 1 origin "${NEWT_SOURCE_COMMIT}" \
+    && git checkout --detach FETCH_HEAD
+
+WORKDIR /src/newt
+COPY newt-http2.patch /tmp/newt-http2.patch
+RUN git apply --check /tmp/newt-http2.patch \
+    && git apply /tmp/newt-http2.patch \
+    && go mod download \
+    && CGO_ENABLED=0 GOOS=linux go build \
+      -ldflags="-s -w -X main.newtVersion={{ omni_newt_version }}+omni-h2" \
+      -o /newt
+
+FROM public.ecr.aws/docker/library/alpine:3.23
+RUN apk --no-cache add ca-certificates tzdata iputils
+COPY --from=builder /newt /usr/local/bin/newt
+COPY --from=builder /src/newt/entrypoint.sh /entrypoint.sh
+ENV NEWT_SYSTEM_SUBSTRATE="CONTAINER"
+EXPOSE 2112
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["newt"]

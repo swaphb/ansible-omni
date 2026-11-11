@@ -111,6 +111,13 @@ values = {
     "omni_newt_id": "",
     "omni_newt_secret": "",
     "omni_newt_network_name": "omni-newt",
+    "omni_newt_http2_enabled": False,
+    "omni_newt_source_commit": "329d6a1c6509aa0769fa5bf3b8437518fc4e83df",
+    "omni_pangolin_subnet_router_enabled": False,
+    "omni_pangolin_cli_version": "0.18.1",
+    "omni_pangolin_machine_endpoint": "",
+    "omni_pangolin_machine_id": "",
+    "omni_pangolin_machine_secret": "",
     "omni_embedded_etcd": True,
     "omni_etcd_endpoints": "[]",
     "omni_external_etcd_ca": "",
@@ -122,6 +129,7 @@ concealed = {
     "omni_oidc_client_secret",
     "omni_pocketid_api_key",
     "omni_newt_secret",
+    "omni_pangolin_machine_secret",
     "omni_external_etcd_client_key",
 }
 

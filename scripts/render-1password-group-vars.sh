@@ -52,7 +52,10 @@ names = (
     "omni_extra_ca_certificates omni_eula_name omni_eula_email omni_ca_common_name "
     "omni_cert_country omni_cert_organization omni_cert_valid_days omni_add_host_entries "
     "omni_newt_enabled omni_newt_version omni_newt_pangolin_endpoint omni_newt_id "
-    "omni_newt_secret omni_newt_network_name omni_embedded_etcd omni_etcd_endpoints "
+    "omni_newt_secret omni_newt_network_name omni_newt_http2_enabled omni_newt_source_commit "
+    "omni_pangolin_subnet_router_enabled omni_pangolin_cli_version "
+    "omni_pangolin_machine_endpoint omni_pangolin_machine_id omni_pangolin_machine_secret "
+    "omni_embedded_etcd omni_etcd_endpoints "
     "omni_external_etcd_ca omni_external_etcd_client_cert omni_external_etcd_client_key"
 ).split()
 missing = [name for name in names if name not in values]
@@ -61,7 +64,8 @@ if missing:
 
 bools = {
     "omni_install_docker", "omni_pocketid_bootstrap", "omni_pocketid_skip_consent",
-    "omni_add_host_entries", "omni_newt_enabled", "omni_embedded_etcd",
+    "omni_add_host_entries", "omni_newt_enabled", "omni_newt_http2_enabled",
+    "omni_pangolin_subnet_router_enabled", "omni_embedded_etcd",
 }
 result = {name: values[name] for name in names}
 for name in bools:
