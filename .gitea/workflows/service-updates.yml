@@ -13,7 +13,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out main
+      - name: Check out workflow ref
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -22,7 +22,7 @@ jobs:
       - name: Install validation dependencies
         run: |
           apt-get update
-          apt-get install --yes --no-install-recommends python3-venv
+          apt-get install --yes --no-install-recommends docker.io python3-venv
           python3 -m venv /tmp/ansible-omni-validation
           /tmp/ansible-omni-validation/bin/pip install --disable-pip-version-check \
             ansible-core==2.19.0 Jinja2==3.1.6 PyYAML==6.0.2
@@ -48,9 +48,15 @@ jobs:
             echo "No compatible dependency updates found."
             exit 0
           fi
+          if [ "$(git branch --show-current)" != "main" ]; then
+            echo "Dependency updates were validated; skipping pull-request creation outside main."
+            exit 0
+          fi
           git config user.name "ansible-omni update bot"
           git config user.email "actions@localhost"
-          git switch -C automation/service-updates
+          git diff --binary > /tmp/service-updates.patch
+          git switch --force-create automation/service-updates origin/main
+          git apply /tmp/service-updates.patch
           git add automation/service-pins.json README.md group_vars/omni.yml.example \
             roles/omni/defaults/main.yml roles/omni/vars/main.yml scripts/bootstrap-1password.sh \
             examples/pangolin-subnet-router/compose.yml
