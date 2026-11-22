@@ -54,13 +54,11 @@ jobs:
           fi
           git config user.name "ansible-omni update bot"
           git config user.email "actions@localhost"
-          git diff --binary > /tmp/service-updates.patch
-          git switch --force-create automation/service-updates origin/main
-          git apply /tmp/service-updates.patch
           git add automation/service-pins.json README.md group_vars/omni.yml.example \
             roles/omni/defaults/main.yml roles/omni/vars/main.yml scripts/bootstrap-1password.sh \
             examples/pangolin-subnet-router/compose.yml
           git commit -m "chore: update pinned service versions"
+          git switch --force-create automation/service-updates
           git push --force origin automation/service-updates
           /tmp/ansible-omni-validation/bin/python scripts/create-service-update-pr.py \
             --report /tmp/service-update-report.json
