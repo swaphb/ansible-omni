@@ -223,6 +223,29 @@ endpoint DNS SANs and the relevant IP SANs.
 | `omni_pangolin_machine_*` | empty | Pangolin machine-client endpoint, ID, and secret for the subnet router |
 | `omni_oidc_provider` | `dex` | Bundled Dex, or an external Pocket ID server |
 
+### Automated service updates
+
+`.gitea/workflows/service-updates.yml` runs every Monday at 03:23 UTC and can
+also be started manually from Gitea Actions. It discovers the newest stable
+Omni, Dex, Newt, and Pangolin CLI releases, updates their pinned values and all
+documented/default-value mirrors, validates the supported Compose variants,
+pulls every image, and opens or refreshes the workflow-owned
+`automation/service-updates` pull request. Review and merge that PR normally;
+the workflow never commits directly to `main`.
+
+Enable Gitea Actions for the repository and ensure its built-in
+`GITEA_TOKEN` is allowed `contents: write` and `pull-requests: write`. The
+runner needs Docker, Git, Python 3, and outbound access to GitHub, PyPI, Docker
+Hub, GHCR, and public ECR. The workflow installs its pinned Ansible/Jinja/YAML
+validation dependencies in a temporary virtual environment.
+
+Newt is patch-gated because the optional Omni HTTP/2 derivative modifies
+upstream source. Its version advances only when the release source can be
+resolved to an immutable commit and `newt-http2.patch` applies cleanly. The
+full Docker validation then runs the focused Newt test and build. If that gate
+fails, the report records Newt as skipped while compatible updates for the
+other services can still be proposed.
+
 The role hashes the admin password with bcrypt, stores that hash in
 `/opt/omni/secrets/admin-password.hash`, and writes the hash into the Dex
 configuration. Ansible still receives the plaintext password. Changing the
@@ -366,8 +389,9 @@ upstream transport. The build runs on the Omni host and needs outbound access
 to GitHub and Docker Hub/ECR for its source and builder images. It does not
 change the Pangolin resource: keep the UI target at `https` and `omni:443`.
 Review and update the pin and patch together when changing `omni_newt_version`.
-The role intentionally rejects a custom HTTP/2 build for any version other
-than the tested `1.19.0` until its source pin and patch are updated together.
+The role intentionally permits a custom HTTP/2 build only for a version and
+source revision listed in its tested compatibility map. The update workflow
+maintains that map only after the patch gate succeeds.
 
 ### Optional Pangolin subnet router
 

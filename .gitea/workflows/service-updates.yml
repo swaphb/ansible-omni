@@ -1,0 +1,64 @@
+name: Service updates
+
+on:
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out workflow ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITEA_TOKEN }}
+
+      - name: Install validation dependencies
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends docker.io python3-venv
+          python3 -m venv /tmp/ansible-omni-validation
+          /tmp/ansible-omni-validation/bin/pip install --disable-pip-version-check \
+            ansible-core==2.19.0 Jinja2==3.1.6 PyYAML==6.0.2
+
+      - name: Discover and apply compatible stable releases
+        run: |
+          /tmp/ansible-omni-validation/bin/python scripts/update-service-pins.py \
+            --apply --report /tmp/service-update-report.json
+
+      - name: Validate rendered deployment configurations
+        run: /tmp/ansible-omni-validation/bin/python scripts/validate-compose-variants.py
+
+      - name: Validate pinned images and the Newt derivative
+        run: /tmp/ansible-omni-validation/bin/python scripts/validate-service-images.py
+
+      - name: Create or refresh update pull request
+        env:
+          GITEA_API_URL: ${{ gitea.api_url }}
+          GITEA_REPOSITORY: ${{ gitea.repository }}
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          if git diff --quiet; then
+            echo "No compatible dependency updates found."
+            exit 0
+          fi
+          if [ "$(git branch --show-current)" != "main" ]; then
+            echo "Dependency updates were validated; skipping pull-request creation outside main."
+            exit 0
+          fi
+          git config user.name "ansible-omni update bot"
+          git config user.email "actions@localhost"
+          git add automation/service-pins.json README.md group_vars/omni.yml.example \
+            roles/omni/defaults/main.yml roles/omni/vars/main.yml scripts/bootstrap-1password.sh \
+            examples/pangolin-subnet-router/compose.yml
+          git commit -m "chore: update pinned service versions"
+          git switch --force-create automation/service-updates
+          git push --force origin automation/service-updates
+          /tmp/ansible-omni-validation/bin/python scripts/create-service-update-pr.py \
+            --report /tmp/service-update-report.json

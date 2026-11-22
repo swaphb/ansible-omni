@@ -4,6 +4,10 @@ omni_auth_endpoint: auth.internal
 omni_advertised_ip: 192.0.2.10
 omni_private_ip: 192.0.2.10
 omni_admin_email: admin@omni.internal
+# Keep these pins synchronized with the matching README entries. The scheduled
+# Gitea Action proposes release updates in a reviewable pull request.
+omni_version: v1.12.4
+omni_dex_version: v2.41.1
 
 # Store these with ansible-vault; do not commit real values.
 omni_admin_password: CHANGE_ME
@@ -24,13 +28,14 @@ omni_extra_ca_certificates: ""
 # Optional: make Omni reachable through an existing Pangolin server via Newt.
 # Create a Newt site in Pangolin first and copy its three values here.
 omni_newt_enabled: false
+omni_newt_version: "1.19.0"
 omni_newt_pangolin_endpoint: https://pangolin.example.com
 omni_newt_id: ""
 omni_newt_secret: ""
 # Required for Omni's HTTP/2 UI/API through Newt private HTTPS resources.
 # This builds a pinned Newt derivative on the target during deployment.
 omni_newt_http2_enabled: false
-# Keep this source pin aligned with the supported 1.19.0 patch.
+# Keep this source pin aligned with the supported Newt HTTP/2 patch.
 omni_newt_source_commit: "329d6a1c6509aa0769fa5bf3b8437518fc4e83df"
 
 # Optional: Pangolin machine client for subnet routing. This requires Newt
