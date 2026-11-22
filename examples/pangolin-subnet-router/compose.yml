@@ -1,6 +1,6 @@
 services:
   pangolin-subnet-router:
-    image: docker.io/fosrl/pangolin-cli:0.18.1
+    image: docker.io/fosrl/pangolin-cli:0.23.0
     container_name: pangolin-subnet-router
     restart: unless-stopped
     network_mode: host

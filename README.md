@@ -204,8 +204,8 @@ endpoint DNS SANs and the relevant IP SANs.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `omni_version` | `v1.12.4` | Pinned Omni image tag. Review the release notes before changing it. |
-| `omni_dex_version` | `v2.41.1` | Pinned Dex image tag |
+| `omni_version` | `v1.13.3` | Pinned Omni image tag. Review the release notes before changing it. |
+| `omni_dex_version` | `v2.46.1` | Pinned Dex image tag |
 | `omni_endpoint` | `omni.internal` | Omni API and UI DNS name |
 | `omni_auth_endpoint` | `auth.internal` | Dex issuer DNS name |
 | `omni_advertised_ip` | host default IP | Address Talos machines use for WireGuard |
@@ -216,9 +216,9 @@ endpoint DNS SANs and the relevant IP SANs.
 | `omni_embedded_etcd` | `true` | Use the single-host embedded datastore |
 | `omni_base_dir` | `/opt/omni` | Root for configuration and persistent data |
 | `omni_newt_enabled` | `false` | Isolate services behind a Pangolin Newt connector |
-| `omni_newt_version` | `1.19.0` | Pinned Newt container tag |
+| `omni_newt_version` | `1.20.1` | Pinned Newt container tag |
 | `omni_newt_http2_enabled` | `false` | Build a pinned Newt derivative that proxies HTTPS resources with HTTP/2 support |
-| `omni_newt_source_commit` | `329d6a1…4e83df` | Exact Newt 1.19.0 source revision used by the HTTP/2 derivative |
+| `omni_newt_source_commit` | `745110e…c8e33d` | Exact Newt 1.20.1 source revision used by the HTTP/2 derivative |
 | `omni_pangolin_subnet_router_enabled` | `false` | Run a Pangolin machine client as a subnet router on the Omni host |
 | `omni_pangolin_machine_*` | empty | Pangolin machine-client endpoint, ID, and secret for the subnet router |
 | `omni_oidc_provider` | `dex` | Bundled Dex, or an external Pocket ID server |
@@ -362,13 +362,13 @@ variables:
 
 ```yaml
 omni_newt_enabled: true
-omni_newt_version: "1.19.0"
+omni_newt_version: "1.20.1"
 omni_newt_pangolin_endpoint: https://pangolin.example.com
 omni_newt_id: site-id-from-pangolin
 omni_newt_secret: "{{ vault_omni_newt_secret }}"
 # Required for the Omni UI/API resource; see the HTTP/2 note below.
 omni_newt_http2_enabled: true
-omni_newt_source_commit: "329d6a1c6509aa0769fa5bf3b8437518fc4e83df"
+omni_newt_source_commit: "745110e75fefd6139ada2895818d9a3529c8e33d"
 ```
 
 The role writes a root-only Compose secret and starts `omni-newt`. Pangolin's
@@ -377,12 +377,12 @@ requires the endpoint, the site ID, and the site secret.
 
 ### Omni UI HTTP/2 support
 
-Omni uses long-lived HTTP/2 API streams. Newt 1.19.0's private HTTPS handler
+Omni uses long-lived HTTP/2 API streams. Newt 1.20.1's private HTTPS handler
 does not advertise HTTP/2 or enable it on its HTTPS upstream transport, which
 can make the sign-in page load while the application itself times out or fails
 to load assets. Set `omni_newt_http2_enabled: true` for the Omni site.
 
-The role then builds a local, pinned derivative from the exact Newt 1.19.0
+The role then builds a local, pinned derivative from the exact Newt 1.20.1
 source commit with only three changes: it advertises `h2` and `http/1.1` over
 TLS, enables Go's HTTP/2 server handler, and enables HTTP/2 on the HTTPS
 upstream transport. The build runs on the Omni host and needs outbound access
@@ -406,13 +406,13 @@ host or CIDR resource, then vault its values:
 
 ```yaml
 omni_pangolin_subnet_router_enabled: true
-omni_pangolin_cli_version: "0.18.1"
+omni_pangolin_cli_version: "0.23.0"
 omni_pangolin_machine_endpoint: https://pangolin.example.com
 omni_pangolin_machine_id: machine-client-id-from-pangolin
 omni_pangolin_machine_secret: "{{ vault_omni_pangolin_machine_secret }}"
 ```
 
-The sidecar uses Pangolin CLI 0.18.1 or newer because subnet-router support
+The sidecar uses Pangolin CLI 0.23.0 or newer because subnet-router support
 was introduced in CLI 0.18.0. It uses host networking, `NET_ADMIN`, and
 `/dev/net/tun`; enabling it
 changes routing and firewall behavior on the Omni host. It is only useful when

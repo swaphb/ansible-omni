@@ -1,7 +1,7 @@
 ---
 omni_install_docker: true
-omni_version: v1.12.4
-omni_dex_version: v2.41.1
+omni_version: v1.13.3
+omni_dex_version: v2.46.1
 omni_base_dir: /opt/omni
 omni_endpoint: omni.internal
 omni_auth_endpoint: auth.internal
@@ -29,7 +29,7 @@ omni_add_host_entries: true
 # Optional Pangolin Newt sidecar. In this mode Omni, Dex, and Newt share an
 # un-published bridge network instead of exposing ports on the Omni host.
 omni_newt_enabled: false
-omni_newt_version: "1.19.0"
+omni_newt_version: "1.20.1"
 omni_newt_pangolin_endpoint: ""
 omni_newt_id: ""
 omni_newt_secret: ""
@@ -38,12 +38,12 @@ omni_newt_network_name: omni-newt
 # when the resource proxies a protocol such as Omni that requires HTTP/2
 # streams. This builds a small, pinned derivative of the selected Newt source.
 omni_newt_http2_enabled: false
-omni_newt_source_commit: "329d6a1c6509aa0769fa5bf3b8437518fc4e83df"
+omni_newt_source_commit: "745110e75fefd6139ada2895818d9a3529c8e33d"
 
 # Optional Pangolin machine client. When enabled, it runs on the Omni host's
 # network namespace as a subnet router for devices that cannot run the client.
 omni_pangolin_subnet_router_enabled: false
-omni_pangolin_cli_version: "0.18.1"
+omni_pangolin_cli_version: "0.23.0"
 omni_pangolin_machine_endpoint: ""
 omni_pangolin_machine_id: ""
 omni_pangolin_machine_secret: ""
