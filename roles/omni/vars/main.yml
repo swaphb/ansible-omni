@@ -4,4 +4,4 @@
 # revision through defaults/group variables, while the role prevents an
 # untested HTTP/2 derivative from being built accidentally.
 omni_newt_http2_compatible_revisions:
-  "1.19.0": "329d6a1c6509aa0769fa5bf3b8437518fc4e83df"
+  "1.20.1": "745110e75fefd6139ada2895818d9a3529c8e33d"
