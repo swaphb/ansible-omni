@@ -16,8 +16,8 @@
       - not omni_newt_enabled or omni_newt_id | length > 0
       - not omni_newt_enabled or omni_newt_secret | length > 0
       - not omni_newt_http2_enabled or omni_newt_enabled
-      - not omni_newt_http2_enabled or omni_newt_version == '1.19.0'
-      - not omni_newt_http2_enabled or omni_newt_source_commit | length == 40
+      - not omni_newt_http2_enabled or omni_newt_version in omni_newt_http2_compatible_revisions
+      - not omni_newt_http2_enabled or omni_newt_source_commit == omni_newt_http2_compatible_revisions[omni_newt_version]
       - not omni_pangolin_subnet_router_enabled or omni_newt_enabled
       - not omni_pangolin_subnet_router_enabled or omni_pangolin_machine_endpoint | length > 0
       - not omni_pangolin_subnet_router_enabled or omni_pangolin_machine_id | length > 0

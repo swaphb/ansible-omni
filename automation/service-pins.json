@@ -1,0 +1,27 @@
+{
+  "services": {
+    "omni": {
+      "github_repository": "siderolabs/omni",
+      "tag_prefix": "v",
+      "variable": "omni_version"
+    },
+    "dex": {
+      "github_repository": "dexidp/dex",
+      "tag_prefix": "v",
+      "variable": "omni_dex_version"
+    },
+    "newt": {
+      "github_repository": "fosrl/newt",
+      "tag_prefix": "v",
+      "strip_leading_v": true,
+      "variable": "omni_newt_version",
+      "http2_patch": "roles/omni/files/newt-http2.patch"
+    },
+    "pangolin_cli": {
+      "github_repository": "fosrl/cli",
+      "tag_prefix": "v",
+      "strip_leading_v": true,
+      "variable": "omni_pangolin_cli_version"
+    }
+  }
+}
