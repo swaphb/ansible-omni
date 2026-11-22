@@ -20,7 +20,7 @@
     },
     "pangolin_cli": {
       "github_repository": "fosrl/cli",
-      "tag_prefix": "v",
+      "tag_prefix": "",
       "strip_leading_v": true,
       "discovery": "tags",
       "variable": "omni_pangolin_cli_version"
