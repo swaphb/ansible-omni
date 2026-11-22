@@ -9,12 +9,14 @@ Newt pin and compatibility map are changed.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -46,21 +48,28 @@ def release_key(tag: str) -> tuple[int, ...] | None:
     return tuple(int(part or 0) for part in match.groups())
 
 
-def latest_release(repository: str, prefix: str) -> str:
+def latest_release(repository: str, prefix: str, discovery: str = "releases") -> str:
+    endpoint = "tags" if discovery == "tags" else "releases"
     request = urllib.request.Request(
-        f"https://api.github.com/repos/{repository}/releases?per_page=100",
+        f"https://api.github.com/repos/{repository}/{endpoint}?per_page=100",
         headers={"Accept": "application/vnd.github+json", "User-Agent": "ansible-omni-updater"},
     )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            releases = json.load(response)
-    except urllib.error.URLError as error:
-        raise RuntimeError(f"could not query releases for {repository}: {error}") from error
+    releases = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                releases = json.load(response)
+            break
+        except (http.client.HTTPException, urllib.error.URLError) as error:
+            if attempt == 2:
+                raise RuntimeError(f"could not query {endpoint} for {repository}: {error}") from error
+            time.sleep(attempt + 1)
+    assert releases is not None
 
     candidates: list[tuple[tuple[int, ...], str]] = []
     for release in releases:
-        tag = release.get("tag_name", "")
-        if release.get("draft") or release.get("prerelease"):
+        tag = release.get("name", "") if discovery == "tags" else release.get("tag_name", "")
+        if discovery == "releases" and (release.get("draft") or release.get("prerelease")):
             continue
         if prefix and not tag.startswith(prefix):
             continue
@@ -169,7 +178,9 @@ def main() -> int:
     for name, service in catalog.items():
         variable = service["variable"]
         old = current_value(variable)
-        latest_release_tag = latest_release(service["github_repository"], service["tag_prefix"])
+        latest_release_tag = latest_release(
+            service["github_repository"], service["tag_prefix"], service.get("discovery", "releases")
+        )
         latest = latest_release_tag.removeprefix("v") if service.get("strip_leading_v") else latest_release_tag
         if latest == old:
             report["unchanged"][name] = old
