@@ -28,6 +28,7 @@ omni_extra_ca_certificates: ""
 # Optional: make Omni reachable through an existing Pangolin server via Newt.
 # Create a Newt site in Pangolin first and copy its three values here.
 omni_newt_enabled: false
+omni_newt_version: "1.19.0"
 omni_newt_pangolin_endpoint: https://pangolin.example.com
 omni_newt_id: ""
 omni_newt_secret: ""
