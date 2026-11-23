@@ -248,20 +248,24 @@ other services can still be proposed.
 
 ### Releases for merged pull requests
 
-`.gitea/workflows/release-on-main.yml` publishes a Gitea release whenever a
-pull request is merged into `main`. It tags the exact merge commit as
-`release-pr-<number>-<merge-sha>` and uses the pull request's commits to write
-release notes. Conventional commit prefixes group entries under new features
-(`feat:`), bug fixes (`fix:`), and upgrades (`build:`, `ci:`, `chore:`, or
-dependency-specific terms such as "bump" and "dependencies").
-Entries marked with `!` or `BREAKING CHANGE` are listed under breaking changes.
-Other commit subjects remain visible under "Other changes".
+`.gitea/workflows/release-on-main.yml` publishes a sequentially versioned
+Gitea release whenever a pull request is merged into `main`. It reads the
+pull request's commits, categorizes them with the same conventional-commit
+rules used for the notes below, and bumps the highest existing `vMAJOR.MINOR.PATCH`
+release tag accordingly: any breaking-change entry bumps major, otherwise any
+new-feature entry bumps minor, otherwise it bumps patch. The first release is
+`v1.0.0`. The release notes group entries under new features (`feat:`), bug
+fixes (`fix:`), and upgrades (`build:`, `ci:`, `chore:`, or dependency-specific
+terms such as "bump" and "dependencies"). Entries marked with `!` or
+`BREAKING CHANGE` are listed under breaking changes. Other commit subjects
+remain visible under "Other changes".
 
 Enable Gitea Actions and grant its built-in `GITEA_TOKEN` `contents: write`
 and `pull-requests: read` permissions; the job reads the merged pull request
-and its commits to build the notes. The release is idempotent: rerunning the
-job for the same merged pull request detects its deterministic tag and leaves
-the existing release unchanged.
+and its commits to build the notes, and reads existing releases to compute
+the next version. The release is idempotent: rerunning the job for a merge
+commit that already has a release leaves it unchanged instead of bumping
+the version again.
 
 The role hashes the admin password with bcrypt, stores that hash in
 `/opt/omni/secrets/admin-password.hash`, and writes the hash into the Dex

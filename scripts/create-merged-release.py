@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish categorized release notes for one merged pull request."""
+"""Publish a sequentially versioned release for one merged pull request."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import os
 import re
 import sys
 import urllib.error
-import urllib.parse
 import urllib.request
 
 
@@ -33,6 +32,8 @@ UPGRADE = re.compile(
     rf"|\b(?:{DEPENDENCY_CONTEXT})\b[^\n]*\b(?:{UPGRADE_VERB})\b",
     re.IGNORECASE,
 )
+
+VERSION_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 
 
 def request(url: str, token: str, method: str = "GET", body: dict[str, object] | None = None) -> object:
@@ -86,15 +87,14 @@ def link_label(text: str) -> str:
     return re.sub(r"([\\\[\]])", r"\\\1", text)
 
 
-def release_notes(pull_request: dict[str, object], commits: list[dict[str, object]]) -> str:
+def categorize(pull_request: dict[str, object], commits: list[dict[str, object]]) -> dict[str, list[str]]:
     title = str(pull_request.get("title", "Merged pull request")).strip()
     body = str(pull_request.get("body") or "")
-    url = str(pull_request.get("html_url") or "")
     subjects = [title]
     subjects.extend(commit_subject(commit) for commit in commits)
     subjects = [subject for subject in subjects if subject]
 
-    sections = {
+    sections: dict[str, list[str]] = {
         "Breaking changes": [],
         "New features": [],
         "Bug fixes": [],
@@ -103,6 +103,21 @@ def release_notes(pull_request: dict[str, object], commits: list[dict[str, objec
     }
     for subject in dict.fromkeys(subjects):
         sections[category(subject, subject == title and bool(BREAKING.search(body)))].append(subject)
+    return sections
+
+
+def bump_kind(sections: dict[str, list[str]]) -> str:
+    """The semver component a release should bump, from its categorized changes."""
+    if sections["Breaking changes"]:
+        return "major"
+    if sections["New features"]:
+        return "minor"
+    return "patch"
+
+
+def release_notes(pull_request: dict[str, object], sections: dict[str, list[str]]) -> str:
+    title = str(pull_request.get("title", "Merged pull request")).strip()
+    url = str(pull_request.get("html_url") or "")
 
     lines = ["## Included pull request", ""]
     if url:
@@ -116,17 +131,57 @@ def release_notes(pull_request: dict[str, object], commits: list[dict[str, objec
     return "\n".join(lines) + "\n"
 
 
-def existing_release(api_url: str, repository: str, tag: str, token: str) -> dict[str, object] | None:
-    endpoint = f"{api_url}/repos/{repository}/releases/tags/{urllib.parse.quote(tag, safe='')}"
-    try:
-        release = request(endpoint, token)
-    except urllib.error.HTTPError as error:
-        if error.code == 404:
-            return None
-        raise
-    if not isinstance(release, dict):
-        raise RuntimeError("Gitea returned an invalid release")
-    return release
+def list_releases(api_url: str, repository: str, token: str) -> list[dict[str, object]]:
+    releases: list[dict[str, object]] = []
+    page = 1
+    while True:
+        endpoint = f"{api_url}/repos/{repository}/releases?limit=50&page={page}"
+        result = request(endpoint, token)
+        if not isinstance(result, list):
+            raise RuntimeError("Gitea returned an invalid release list")
+        releases.extend(release for release in result if isinstance(release, dict))
+        if len(result) < 50:
+            return releases
+        page += 1
+
+
+def parse_version(tag: str) -> tuple[int, int, int] | None:
+    match = VERSION_TAG.fullmatch(tag)
+    if not match:
+        return None
+    major, minor, patch = (int(part) for part in match.groups())
+    return (major, minor, patch)
+
+
+def latest_version(releases: list[dict[str, object]]) -> tuple[int, int, int] | None:
+    versions = [
+        version
+        for version in (parse_version(str(release.get("tag_name", ""))) for release in releases)
+        if version
+    ]
+    return max(versions) if versions else None
+
+
+def next_version(latest: tuple[int, int, int] | None, kind: str) -> tuple[int, int, int]:
+    if latest is None:
+        return (1, 0, 0)
+    major, minor, patch = latest
+    if kind == "major":
+        return (major + 1, 0, 0)
+    if kind == "minor":
+        return (major, minor + 1, 0)
+    return (major, minor, patch + 1)
+
+
+def format_version(version: tuple[int, int, int]) -> str:
+    return f"v{version[0]}.{version[1]}.{version[2]}"
+
+
+def release_for_commit(releases: list[dict[str, object]], merge_sha: str) -> dict[str, object] | None:
+    return next(
+        (release for release in releases if str(release.get("target_commitish", "")) == merge_sha),
+        None,
+    )
 
 
 def main() -> int:
@@ -140,10 +195,10 @@ def main() -> int:
     if not number.isdecimal():
         raise RuntimeError("PULL_REQUEST_NUMBER must be numeric")
 
-    tag = f"release-pr-{number}-{merge_sha[:12].lower()}"
-    release = existing_release(api_url, repository, tag, token)
-    if release:
-        print(f"Release already exists: {release.get('html_url', tag)}")
+    releases = list_releases(api_url, repository, token)
+    existing = release_for_commit(releases, merge_sha)
+    if existing:
+        print(f"Release already exists for this merge commit: {existing.get('html_url', merge_sha)}")
         return 0
 
     pull_request_url = f"{api_url}/repos/{repository}/pulls/{number}"
@@ -151,21 +206,32 @@ def main() -> int:
     if not isinstance(pull_request, dict):
         raise RuntimeError("Gitea returned an invalid pull request")
     commits = pull_request_commits(api_url, repository, number, token)
+    sections = categorize(pull_request, commits)
+    kind = bump_kind(sections)
+    tag = format_version(next_version(latest_version(releases), kind))
+
     payload = {
         "tag_name": tag,
         "target_commitish": merge_sha,
-        "name": f"Release for pull request #{number}",
-        "body": release_notes(pull_request, commits),
+        "name": tag,
+        "body": release_notes(pull_request, sections),
     }
     try:
         created = request(f"{api_url}/repos/{repository}/releases", token, "POST", payload)
     except urllib.error.HTTPError as error:
         if error.code == 409:
-            release = existing_release(api_url, repository, tag, token)
-            if release:
-                print(f"Release already exists: {release.get('html_url', tag)}")
+            # Another run took this tag or this merge commit first. Re-read
+            # releases: if this commit is now covered, we're done; otherwise
+            # recompute the next version from current state and retry once.
+            releases = list_releases(api_url, repository, token)
+            existing = release_for_commit(releases, merge_sha)
+            if existing:
+                print(f"Release already exists for this merge commit: {existing.get('html_url', merge_sha)}")
                 return 0
-        raise
+            payload["tag_name"] = payload["name"] = format_version(next_version(latest_version(releases), kind))
+            created = request(f"{api_url}/repos/{repository}/releases", token, "POST", payload)
+        else:
+            raise
     if not isinstance(created, dict):
         raise RuntimeError("Gitea returned an invalid created release")
     print(f"Created release: {created.get('html_url', tag)}")
