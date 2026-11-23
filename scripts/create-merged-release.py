@@ -11,7 +11,12 @@ import urllib.error
 import urllib.request
 
 
-BREAKING = re.compile(r"\bbreaking(?:[ -]change)?\b|^[a-z]+(?:\([^)]*\))?!:", re.IGNORECASE)
+BREAKING = re.compile(r"\bbreaking change\b|^[a-z]+(?:\([^)]*\))?!:", re.IGNORECASE)
+# A conventional-commit "BREAKING CHANGE:" footer, anchored to the start of a
+# line. Unlike BREAKING above, this is checked against the free-text PR
+# description, so it must not match prose that merely discusses breaking
+# changes (e.g. "No breaking changes in this PR").
+BREAKING_FOOTER = re.compile(r"^BREAKING[ -]CHANGE:", re.IGNORECASE | re.MULTILINE)
 FEATURE = re.compile(r"^(?:feat|feature)(?:\([^)]*\))?!?:", re.IGNORECASE)
 FIX = re.compile(r"^(?:fix|bugfix|hotfix)(?:\([^)]*\))?!?:|\b(?:bug fix|bugfix)\b", re.IGNORECASE)
 # Words that mark a subject as being about dependencies rather than prose.
@@ -102,7 +107,7 @@ def categorize(pull_request: dict[str, object], commits: list[dict[str, object]]
         "Other changes": [],
     }
     for subject in dict.fromkeys(subjects):
-        sections[category(subject, subject == title and bool(BREAKING.search(body)))].append(subject)
+        sections[category(subject, subject == title and bool(BREAKING_FOOTER.search(body)))].append(subject)
     return sections
 
 

@@ -256,9 +256,12 @@ release tag accordingly: any breaking-change entry bumps major, otherwise any
 new-feature entry bumps minor, otherwise it bumps patch. The first release is
 `v1.0.0`. The release notes group entries under new features (`feat:`), bug
 fixes (`fix:`), and upgrades (`build:`, `ci:`, `chore:`, or dependency-specific
-terms such as "bump" and "dependencies"). Entries marked with `!` or
-`BREAKING CHANGE` are listed under breaking changes. Other commit subjects
-remain visible under "Other changes".
+terms such as "bump" and "dependencies"). Entries marked with `!` or a
+`BREAKING CHANGE:` footer are listed under breaking changes; the pull
+request's own `!` marker or a `BREAKING CHANGE:` footer in its description
+also forces a major version bump, but a description that merely mentions
+"breaking" in prose does not. Other commit subjects remain visible under
+"Other changes".
 
 Enable Gitea Actions and grant its built-in `GITEA_TOKEN` `contents: write`
 and `pull-requests: read` permissions; the job reads the merged pull request
