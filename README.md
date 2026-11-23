@@ -246,6 +246,23 @@ full Docker validation then runs the focused Newt test and build. If that gate
 fails, the report records Newt as skipped while compatible updates for the
 other services can still be proposed.
 
+### Releases for merged pull requests
+
+`.gitea/workflows/release-on-main.yml` publishes a Gitea release whenever a
+pull request is merged into `main`. It tags the exact merge commit as
+`release-pr-<number>-<merge-sha>` and uses the pull request's commits to write
+release notes. Conventional commit prefixes group entries under new features
+(`feat:`), bug fixes (`fix:`), and upgrades (`build:`, `ci:`, `chore:`, or
+dependency-specific terms such as "bump" and "dependencies").
+Entries marked with `!` or `BREAKING CHANGE` are listed under breaking changes.
+Other commit subjects remain visible under "Other changes".
+
+Enable Gitea Actions and grant its built-in `GITEA_TOKEN` `contents: write`
+and `pull-requests: read` permissions; the job reads the merged pull request
+and its commits to build the notes. The release is idempotent: rerunning the
+job for the same merged pull request detects its deterministic tag and leaves
+the existing release unchanged.
+
 The role hashes the admin password with bcrypt, stores that hash in
 `/opt/omni/secrets/admin-password.hash`, and writes the hash into the Dex
 configuration. Ansible still receives the plaintext password. Changing the
